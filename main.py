@@ -26,6 +26,7 @@ class Spaceship(arcade.Sprite):
 		self.angle = -90
 		self.color = (r, g, b)
 		
+		self.pos = pos
 		self.row = row
 		self.target_x = self.center_x
 	
@@ -120,7 +121,7 @@ class UnfinityGame(arcade.Window):
 			r = colors[3:6]
 			g = colors[6:9]
 			b = colors[9:12]
-			self.shipList.append(Spaceship(pos, r, g, b, index))
+			self.shipList.append(Spaceship(int(pos), r, g, b, index))
 	
 	def moveShips(self, steps):
 		for index, step in enumerate(steps):
@@ -145,6 +146,10 @@ class UnfinityGame(arcade.Window):
 				ship.target_y = ship.center_y
 		
 		self.shipList.draw()
+		
+		for i in range(len(self.shipList)):
+			ship = self.shipList[i]
+			arcade.draw_text(str(ship.pos + 1), ship.center_x + 50, ship.center_y, arcade.color.BLACK, 20, align="center", anchor_x="center", anchor_y="center")
 		
 		if self.gameState == 'WAITING':
 			arcade.draw_text('Warte auf Spieler\nButton drücken zum Beitreten\n', width / 2, height / 2, arcade.color.WHITE, 50, align="center", anchor_x="center", anchor_y="center")
