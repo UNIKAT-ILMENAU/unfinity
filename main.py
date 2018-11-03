@@ -9,14 +9,11 @@ import sys
 import time
 import os
 
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 800
-
 def millis():
 	return int(round(time.time() * 1000))
 
 class Spaceship(arcade.Sprite):
-	def __init__(self, r, g, b, row):
+	def __init__(self, pos, r, g, b, row):
 		fileName = 'out/player_' + str(r) + '_' + str(g) + '_' + str(b) + '.png'
 		if not os.path.isfile(fileName):
 			image = Image.open('spacecraft_white.png').convert('RGBA')
@@ -25,9 +22,7 @@ class Spaceship(arcade.Sprite):
 			final_image = Image.fromarray(image_data, mode='RGBA')
 			final_image.save(fileName, 'PNG')
 		
-		super().__init__(fileName, 0.1)
-		self.center_x = 60
-		self.center_y = 50 + row * 50
+		super().__init__(fileName, 0.2)
 		self.angle = -90
 		self.color = (r, g, b)
 		
@@ -40,24 +35,17 @@ class Spaceship(arcade.Sprite):
 		else:
 			self.velocity = [0, 0]
 		super().update()
-	
-	def checkWinner(self):
-		if self.center_x > 860:
-			print('Winner: ' + str(self.row))
-			return self.row
-		else:
-			return -1
 
 class UnfinityGame(arcade.Window):
 	# Init, Setup & Update
-	def __init__(self, width, height):
-		super().__init__(width, height, fullscreen=False)
+	def __init__(self):
+		super().__init__(640, 480, fullscreen=True)
 		
 		arcade.set_background_color(arcade.color.AMAZON)
 		
 		self.shipList = None
 	
-	def setup(self, serialPort):
+	def setup(self, serialPort, duration, playerPositions):
 		# Drawing
 		self.shipList = arcade.SpriteList()
 		
@@ -69,6 +57,9 @@ class UnfinityGame(arcade.Window):
 		serialThread = threading.Thread(target=self.readSerialData, args=(self.serialPort,))
 		serialThread.start()
 		print('done')
+		
+		self.duration = duration
+		self.playerPositions = playerPositions
 		
 		# Start
 		self.initGame();
@@ -88,8 +79,8 @@ class UnfinityGame(arcade.Window):
 			self.shipList.update()
 	
 	# Draw
-	def drawSFLine(self, x):
-		for y in range(0, SCREEN_HEIGHT, 20):
+	def drawSFLine(self, x, y_max):
+		for y in range(0, y_max, 20):
 			arcade.draw_rectangle_filled(x, y + 5, 10, 10, arcade.color.WHITE)
 			arcade.draw_rectangle_filled(x + 10, y + 5, 10, 10, arcade.color.BLACK)
 			arcade.draw_rectangle_filled(x, y + 15, 10, 10, arcade.color.BLACK)
@@ -99,7 +90,7 @@ class UnfinityGame(arcade.Window):
 	def initGame(self):
 		self.gameState = 'INIT'
 		
-		self.playerCount = 0
+		self.activePlayers = []
 		self.winners = []
 		
 		self.countDown = 0
@@ -125,33 +116,60 @@ class UnfinityGame(arcade.Window):
 	
 	def printShips(self, rgbValues):
 		for index, colors in enumerate(rgbValues):
-			r = colors[0:3]
-			g = colors[3:6]
-			b = colors[6:9]
-			print('Colors:', r, g, b)
-			self.shipList.append(Spaceship(r, g, b, index))
+			pos = colors[0:3]
+			r = colors[3:6]
+			g = colors[6:9]
+			b = colors[9:12]
+			self.shipList.append(Spaceship(pos, r, g, b, index))
 	
 	def moveShips(self, steps):
 		for index, step in enumerate(steps):
-			self.shipList[index].target_x += int(step) * 10
+			self.shipList[index].target_x += int(step) * 50
 	
 	# Callbacks
 	def on_draw(self):
+		width, height = self.get_size()
+		self.set_viewport(0, width, 0, height)
+		
 		arcade.start_render()
 		
-		self.drawSFLine(100)
-		self.drawSFLine(900)
+		self.drawSFLine(width * 0.1, height)
+		self.drawSFLine(width * 0.975, height)
+		
+		if self.gameState == 'WAITING' or self.gameState == 'READY' or self.gameState == 'COUNTDOWN':
+			for i in range(len(self.shipList)):
+				ship = self.shipList[i]
+				ship.center_x = width * 0.1 - ship.height / 2
+				ship.target_x = ship.center_x
+				ship.center_y = height / 2 - ((len(self.shipList) - 1) / 2 - i) * 100
+				ship.target_y = ship.center_y
 		
 		self.shipList.draw()
 		
 		if self.gameState == 'WAITING':
-			arcade.draw_text('Warte auf Spieler\nButton drücken zum beitreten', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, arcade.color.WHITE, 20, align="center", anchor_x="center", anchor_y="center")
+			arcade.draw_text('Warte auf Spieler\nButton drücken zum Beitreten\n', width / 2, height / 2, arcade.color.WHITE, 50, align="center", anchor_x="center", anchor_y="center")
 		elif self.gameState == 'READY':
-			arcade.draw_text('Spielerzahl: ' + str(self.playerCount) + '\nButton drücken zum beitreten', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, arcade.color.WHITE, 20, align="center", anchor_x="center", anchor_y="center")
+			arcade.draw_text('Spielerzahl: ' + str(len(self.activePlayers)) + '\nButton drücken zum Beitreten\n[ENTER] drücken zum Starten', width / 2, height / 2, arcade.color.WHITE, 50, align="center", anchor_x="center", anchor_y="center")
 		elif self.gameState == 'COUNTDOWN':
-			arcade.draw_text(str(self.countDown) + '\nStarte Spiel mit ' + str(self.playerCount) + ' Spielern\n[BACKSPACE] drücken zum abbrechen', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, arcade.color.WHITE, 20, align="center", anchor_x="center", anchor_y="center")
+			arcade.draw_text(str(self.countDown), width / 2, height / 2, arcade.color.WHITE, 100, align="center", anchor_x="center", anchor_y="bottom")
+			arcade.draw_text('Starte Spiel mit ' + str(len(self.activePlayers)) + ' Spielern\n[BACKSPACE] drücken zum Abbrechen', width / 2, height / 2, arcade.color.WHITE, 50, align="center", anchor_x="center", anchor_y="top")
+		elif self.gameState == 'NORMAL':
+			# Check finished
+			for ship in self.shipList:
+				if ship.center_x > width * 0.975 - ship.height / 2:
+					self.winners.append(ship.row)
+			
+			if len(self.winners) > 0:
+				self.gameState = 'FINISHED'
+				self.sendEnd()
 		elif self.gameState == 'FINISHED':
-			arcade.draw_text('Gewonnen: ' + str(self.winners), SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, arcade.color.WHITE, 20, align="center", anchor_x="center", anchor_y="center")
+			winnerStr = 'Spieler '
+			arcade.draw_text('Gewonnen:', width / 2, height / 2, arcade.color.WHITE, 50, align="center", anchor_x="center", anchor_y="bottom")
+			for i in range(len(self.winners)):
+				if i > 0:
+					winnerStr += ' & '
+				winnerStr += str(self.winners[i] + 1)
+			arcade.draw_text(winnerStr, width / 2, height / 2, arcade.color.WHITE, 75, align="center", anchor_x="center", anchor_y="top")
 	
 	def on_key_press(self, key, key_modifiers):
 		if key == arcade.key.ENTER:
@@ -161,6 +179,9 @@ class UnfinityGame(arcade.Window):
 				self.countDownTime = millis()
 				self.sendReady()
 				print('COUNTDOWN:', self.countDown)
+			elif self.gameState == 'FINISHED':
+				self.deleteShips()
+				self.initGame()
 		elif key == arcade.key.BACKSPACE:
 			if self.gameState == 'COUNTDOWN':
 				self.gameState = 'READY'
@@ -205,12 +226,13 @@ class UnfinityGame(arcade.Window):
 			rgbValues = serialLine[6:].rstrip().split(',')
 			
 			for value in rgbValues:
-				if len(value) != 9:
+				if len(value) != 12:
 					print('Invalid RGB value', value)
 					return
 			
-			self.playerCount = len(rgbValues)
-			print('Player count =', self.playerCount)
+			self.activePlayers = []
+			for rgb in rgbValues:
+				self.activePlayers.append(int(rgb[0:3]))
 			
 			if self.gameState == 'WAITING':
 				self.gameState = 'READY'
@@ -226,23 +248,13 @@ class UnfinityGame(arcade.Window):
 			
 			steps = serialLine[7:].rstrip().split(',')
 			
-			if len(steps) != self.playerCount:
-				print('Not enough or too many steps', '(', len(steps), '!=', self.playerCount, ')')
+			if len(steps) != len(self.activePlayers):
+				print('Not enough or too many steps', '(', len(steps), '!=', len(self.activePlayers), ')')
 				return
 			
 			print('Moving', steps, 'steps', '...', end='')
 			self.moveShips(steps)
 			print('done')
-			
-			# Check finished
-			for ship in self.shipList:
-				isWinner = ship.checkWinner()
-				if isWinner >= 0:
-					self.winners.append(isWinner)
-			
-			if len(self.winners) > 0:
-				self.gameState = 'FINISHED'
-				self.sendEnd()
 		else:
 			print('UNKOWN')
 	
@@ -263,7 +275,16 @@ class UnfinityGame(arcade.Window):
 	
 	def sendStart(self):
 		print('Sending \'start\'', '...', end="");
-		self.serialPort.write('start\n'.encode('utf-8'))
+		self.serialPort.write(('start ' + str(duration) + ' ').encode('utf-8'))
+		for i in range(len(self.activePlayers)):
+			if i > 0:
+				self.serialPort.write(','.encode('utf-8'))
+			idx = self.activePlayers[i];
+			if (idx < len(self.playerPositions)):
+				self.serialPort.write(str(self.playerPositions[idx]).encode('utf-8'))
+			else:
+				self.serialPort.write(str(0).encode('utf-8'))
+		self.serialPort.write('\n'.encode('utf-8'))
 		print('done');
 	
 	def sendEnd(self):
@@ -279,16 +300,22 @@ class UnfinityGame(arcade.Window):
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('port')
+	parser.add_argument('duration')
+	parser.add_argument('positions', metavar='N', type=int, nargs='+')
+	
 	args = parser.parse_args()
 	
 	serialPortName = args.port
 	print('Serial port:', serialPortName)
+	duration = args.duration
+	print('Duration:', duration)
+	playerPositions = args.positions
+	print('Player positions:', playerPositions)
 	
 	print('Opening serial port', '...', end='')
 	serialPort = serial.Serial(serialPortName, 115200)
 	print('done')
 	
-	game = UnfinityGame(SCREEN_WIDTH, SCREEN_HEIGHT)
-	game.setup(serialPort)
-	game.set_viewport(0, SCREEN_WIDTH, 0, SCREEN_HEIGHT)
+	game = UnfinityGame()
+	game.setup(serialPort, duration, playerPositions)
 	arcade.run()
